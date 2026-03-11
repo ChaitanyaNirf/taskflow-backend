@@ -1,4 +1,5 @@
 const { prisma } = require('../lib/prisma');
+const { sendTaskAssignmentEmail } = require('../services/emailService');
 
 const createTask = async (req, res) => {
   try {
@@ -40,6 +41,14 @@ const createTask = async (req, res) => {
       },
       include: { tags: { include: { tag: true } } }
     });
+
+    if (assigneeId) {
+      const newAssignee = await prisma.user.findUnique({ where: { id: assigneeId } });
+      const assigner = await prisma.user.findUnique({ where: { id: userId } });
+      if (newAssignee) {
+        sendTaskAssignmentEmail(newAssignee.email, newAssignee.name, task.title, assigner?.name);
+      }
+    }
 
     res.status(201).json(task);
   } catch (error) {
@@ -188,6 +197,15 @@ const updateTask = async (req, res) => {
         version: { increment: 1 }
       }
     });
+
+    // Check if assignee changed and an email should be sent
+    if (assigneeId && assigneeId !== existingTask.assigneeId) {
+      const newAssignee = await prisma.user.findUnique({ where: { id: assigneeId } });
+      const assigner = await prisma.user.findUnique({ where: { id: userId } });
+      if (newAssignee) {
+        sendTaskAssignmentEmail(newAssignee.email, newAssignee.name, updatedTask.title, assigner?.name);
+      }
+    }
 
     res.json(updatedTask);
   } catch (error) {

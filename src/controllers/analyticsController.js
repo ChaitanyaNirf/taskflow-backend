@@ -129,4 +129,51 @@ const exportTasks = async (req, res) => {
   }
 };
 
-module.exports = { getProjectOverview, getUserPerformanceMetrics, exportTasks };
+const getTaskTrends = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const userId = req.user.id;
+
+    const membership = await prisma.projectMember.findUnique({
+      where: { projectId_userId: { projectId, userId } }
+    });
+
+    if (!membership) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    // Get tasks from the last 30 days
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const tasks = await prisma.task.findMany({
+      where: {
+        projectId,
+        createdAt: { gte: thirtyDaysAgo },
+        deletedAt: null
+      },
+      select: { createdAt: true, status: true, updatedAt: true }
+    });
+
+    const trends = {};
+
+    tasks.forEach(t => {
+      const createdDate = t.createdAt.toISOString().split('T')[0];
+      if (!trends[createdDate]) trends[createdDate] = { created: 0, resolved: 0 };
+      trends[createdDate].created++;
+
+      if (t.status === 'RESOLVED' || t.status === 'CLOSED') {
+        const resolvedDate = t.updatedAt.toISOString().split('T')[0];
+        if (!trends[resolvedDate]) trends[resolvedDate] = { created: 0, resolved: 0 };
+        trends[resolvedDate].resolved++;
+      }
+    });
+
+    res.json(trends);
+  } catch (error) {
+    console.error('Error fetching task trends:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+module.exports = { getProjectOverview, getUserPerformanceMetrics, exportTasks, getTaskTrends };

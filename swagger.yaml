@@ -14,6 +14,20 @@ servers:
   - url: http://localhost:5000/api
     description: Local Development Server
 
+tags:
+  - name: Authentication
+    description: Operations related to user authentication and profiles
+  - name: Projects
+    description: Operations related to project management
+  - name: Tasks
+    description: Operations related to tasks
+  - name: Comments
+    description: Operations related to task comments
+  - name: Files
+    description: Operations related to file attachments
+  - name: Analytics
+    description: Operations related to dashboard analytics
+
 components:
   securitySchemes:
     BearerAuth:

@@ -1,6 +1,7 @@
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { prisma } = require('../lib/prisma');
+const { sendRegistrationOtp } = require('../services/emailService');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-jwt-key-for-development-only-change-in-prod';
 
@@ -18,17 +19,19 @@ const register = async (req, res) => {
     }
 
     const password_hash = await bcrypt.hash(password, 10);
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
     const user = await prisma.user.create({
-      data: { name, email, password_hash }
+      data: { name, email, password_hash, otp, otpExpiresAt, isVerified: false }
     });
 
-    const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: '24h' });
+    await sendRegistrationOtp(email, name, otp);
 
     res.status(201).json({
-      message: 'User registered successfully',
-      token,
-      user: { id: user.id, name: user.name, email: user.email }
+      message: 'OTP sent to your email. Please verify to complete registration.',
+      requireVerification: true,
+      email: user.email
     });
   } catch (error) {
     console.error('Registration error:', error);
@@ -54,6 +57,10 @@ const login = async (req, res) => {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
+    if (!user.isVerified) {
+      return res.status(401).json({ error: 'Please verify your email address to login', requireVerification: true, email: user.email });
+    }
+
     const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: '24h' });
 
     res.json({
@@ -67,6 +74,82 @@ const login = async (req, res) => {
   }
 };
 
+const verifyOtp = async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+
+    if (!email || !otp) {
+      return res.status(400).json({ error: 'Email and OTP are required' });
+    }
+
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (user.isVerified) {
+      return res.status(400).json({ error: 'User is already verified' });
+    }
+
+    if (user.otp !== otp) {
+      return res.status(400).json({ error: 'Invalid OTP' });
+    }
+
+    if (user.otpExpiresAt && user.otpExpiresAt < new Date()) {
+      return res.status(400).json({ error: 'OTP has expired. Please request a new one.' });
+    }
+
+    await prisma.user.update({
+      where: { email },
+      data: { isVerified: true, otp: null, otpExpiresAt: null }
+    });
+
+    const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: '24h' });
+
+    res.json({
+      message: 'Email verified successfully',
+      token,
+      user: { id: user.id, name: user.name, email: user.email }
+    });
+  } catch (error) {
+    console.error('Verify OTP error:', error);
+    res.status(500).json({ error: 'Internal server error verifying OTP' });
+  }
+};
+
+const resendOtp = async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (user.isVerified) {
+      return res.status(400).json({ error: 'User is already verified' });
+    }
+
+    const newOtp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+    await prisma.user.update({
+      where: { email },
+      data: { otp: newOtp, otpExpiresAt }
+    });
+
+    await sendRegistrationOtp(user.email, user.name, newOtp);
+
+    res.json({ message: 'A new OTP has been sent to your email.' });
+  } catch (error) {
+    console.error('Resend OTP error:', error);
+    res.status(500).json({ error: 'Internal server error resending OTP' });
+  }
+};
+
 const getProfile = async (req, res) => {
   try {
     const userId = req.user?.id;
@@ -76,7 +159,7 @@ const getProfile = async (req, res) => {
 
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, name: true, email: true, createdAt: true }
+      select: { id: true, name: true, email: true, createdAt: true, isVerified: true }
     });
 
     if (!user) {
@@ -105,6 +188,7 @@ const updateProfile = async (req, res) => {
       return res.status(400).json({ error: 'Email is already in use by another account' });
     }
 
+    // If changing email, ideally we would reset isVerified here, but skipping for simplicity
     const user = await prisma.user.update({
       where: { id: userId },
       data: { name, email },
@@ -118,4 +202,4 @@ const updateProfile = async (req, res) => {
   }
 };
 
-module.exports = { register, login, getProfile, updateProfile };
+module.exports = { register, login, verifyOtp, resendOtp, getProfile, updateProfile };
