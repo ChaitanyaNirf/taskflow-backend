@@ -14,19 +14,12 @@ const getTransporter = async () => {
     return null;
   }
 
-  const host = process.env.SMTP_HOST || 'smtp.gmail.com';
-  
   const transportConfig = {
+    host: 'smtp.gmail.com',
+    port: 587,
+    secure: false, // Use STARTTLS
     auth: { user, pass },
   };
-
-  if (host === 'smtp.gmail.com') {
-    transportConfig.service = 'gmail';
-  } else {
-    transportConfig.host = host;
-    transportConfig.port = process.env.SMTP_PORT || 587;
-    transportConfig.secure = process.env.SMTP_SECURE === 'true';
-  }
 
   transporter = nodemailer.createTransport(transportConfig);
 
