@@ -14,12 +14,21 @@ const getTransporter = async () => {
     return null;
   }
 
-  transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST || 'smtp.gmail.com',
-    port: process.env.SMTP_PORT || 587,
-    secure: process.env.SMTP_SECURE === 'true',
+  const host = process.env.SMTP_HOST || 'smtp.gmail.com';
+  
+  const transportConfig = {
     auth: { user, pass },
-  });
+  };
+
+  if (host === 'smtp.gmail.com') {
+    transportConfig.service = 'gmail';
+  } else {
+    transportConfig.host = host;
+    transportConfig.port = process.env.SMTP_PORT || 587;
+    transportConfig.secure = process.env.SMTP_SECURE === 'true';
+  }
+
+  transporter = nodemailer.createTransport(transportConfig);
 
   return transporter;
 };
