@@ -9,6 +9,9 @@ const routes = require('./routes');
 
 const app = express();
 
+// Required for express-rate-limit to work correctly behind Render's proxy
+app.set('trust proxy', 1);
+
 // Middleware
 app.use(helmet({ crossOriginResourcePolicy: false }));
 app.use(cors());
