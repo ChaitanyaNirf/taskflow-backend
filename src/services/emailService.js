@@ -1,45 +1,22 @@
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 
-// To use a real email, set these environment variables (EMAIL_USER and EMAIL_PASS).
-let transporter;
+const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 
-const getTransporter = async () => {
-  if (transporter) return transporter;
-
-  const user = process.env.SMTP_USER || process.env.EMAIL_USER;
-  const pass = process.env.SMTP_PASS || process.env.EMAIL_PASS;
-
-  if (!user || !pass) {
-    console.warn('[Email Service] Missing email credentials (EMAIL_USER, EMAIL_PASS). Emails will not be sent.');
-    return null;
-  }
-
-  const transportConfig = {
-    host: 'smtp.gmail.com',
-    port: 587,
-    secure: false, // Use STARTTLS
-    auth: { user, pass },
-  };
-
-  transporter = nodemailer.createTransport(transportConfig);
-
-  return transporter;
-};
+// Since we are using the free tier of Resend without a verified domain, 
+// the "from" address must be "onboarding@resend.dev".
+const FROM_EMAIL = 'onboarding@resend.dev';
 
 const sendTaskAssignmentEmail = async (toEmail, toName, taskTitle, assignedByName) => {
   try {
-    const t = await getTransporter();
-    if (!t) return;
+    if (!resend) {
+      console.warn('[Email Service] Missing RESEND_API_KEY. Emails will not be sent.');
+      return;
+    }
 
-    const fromUser = process.env.SMTP_USER || process.env.EMAIL_USER;
-    const fromAddress = `"TaskFlow Platform" <${fromUser}>`;
-    
-    // send mail with defined transport object
-    const info = await t.sendMail({
-      from: fromAddress, // sender address
-      to: toEmail, // list of receivers
-      subject: `New Task Assigned: ${taskTitle}`, // Subject line
-      text: `Hello ${toName},\n\nYou have been newly assigned to the task: "${taskTitle}" by ${assignedByName || 'a team member'}.\n\nPlease check your TaskFlow dashboard for details.\n\nBest,\nTaskFlow Team`, // plain text body
+    const { data, error } = await resend.emails.send({
+      from: `TaskFlow <${FROM_EMAIL}>`,
+      to: [toEmail],
+      subject: `New Task Assigned: ${taskTitle}`,
       html: `
         <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 8px;">
           <h2 style="color: #5e6ad2;">TaskFlow</h2>
@@ -49,28 +26,30 @@ const sendTaskAssignmentEmail = async (toEmail, toName, taskTitle, assignedByNam
           <br/>
           <p style="color: #666; font-size: 12px;">Best,<br/>TaskFlow Team</p>
         </div>
-      `, // html body
+      `,
     });
 
-    console.log(`Email sent: ${info.messageId}`);
+    if (error) {
+      console.error('Failed to send task assignment email:', error);
+    } else {
+      console.log('Task assignment email sent successfully:', data.id);
+    }
   } catch (error) {
-    console.error('Failed to send email:', error);
+    console.error('Email service error:', error);
   }
 };
 
 const sendRegistrationOtp = async (toEmail, toName, otp) => {
   try {
-    const t = await getTransporter();
-    if (!t) return;
+    if (!resend) {
+      console.warn('[Email Service] Missing RESEND_API_KEY. Emails will not be sent.');
+      return;
+    }
 
-    const fromUser = process.env.SMTP_USER || process.env.EMAIL_USER;
-    const fromAddress = `"TaskFlow Platform" <${fromUser}>`;
-    
-    const info = await t.sendMail({
-      from: fromAddress,
-      to: toEmail,
+    const { data, error } = await resend.emails.send({
+      from: `TaskFlow <${FROM_EMAIL}>`,
+      to: [toEmail],
       subject: `Your Registration OTP: ${otp}`,
-      text: `Hello ${toName},\n\nYour OTP for registration is: ${otp}\nThis code will expire in 10 minutes.\n\nBest,\nTaskFlow Team`,
       html: `
         <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 8px; max-width: 500px;">
           <h2 style="color: #5e6ad2; text-align: center;">TaskFlow Account Verification</h2>
@@ -84,9 +63,13 @@ const sendRegistrationOtp = async (toEmail, toName, otp) => {
       `,
     });
 
-    console.log(`OTP Email sent: ${info.messageId}`);
+    if (error) {
+      console.error('Failed to send OTP email:', error);
+    } else {
+      console.log('OTP email sent successfully:', data.id);
+    }
   } catch (error) {
-    console.error('Failed to send OTP email:', error);
+    console.error('OTP email service error:', error);
   }
 };
 
